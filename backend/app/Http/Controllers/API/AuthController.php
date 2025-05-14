@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-
+use Illuminate\Support\Facades\Log;
 class AuthController extends Controller
 {
     /**
@@ -23,6 +23,7 @@ class AuthController extends Controller
         ]);
 
         if ($validator->fails()) {
+            Log::error('Erro de validação: ' . $validator->errors());
             return response()->json([
                 'success' => false,
                 'message' => 'Erro de validação',
