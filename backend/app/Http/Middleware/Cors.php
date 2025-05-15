@@ -20,8 +20,11 @@ class Cors
             $response = $next($request);
         }
         
+        // Definir o domínio do frontend
+        $frontendUrl = env('FRONTEND_URL', 'http://localhost:3000');
+        
         // Set CORS headers
-        $response->headers->set('Access-Control-Allow-Origin', 'http://localhost:3000');
+        $response->headers->set('Access-Control-Allow-Origin', $frontendUrl);
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token, Origin, Authorization, X-Requested-With, Accept');
         $response->headers->set('Access-Control-Allow-Credentials', 'true');

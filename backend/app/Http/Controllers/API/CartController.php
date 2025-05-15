@@ -7,9 +7,12 @@ use App\Models\Product;
 use App\Models\ProductVariation;
 use App\Models\Stock;
 use App\Models\Coupon;
+use App\Models\Cart;
+use App\Models\CartItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class CartController extends Controller
 {
@@ -40,9 +43,22 @@ class CartController extends Controller
      */
     public function index()
     {
+        $cart = $this->getCart();
+        
+        // Converte o modelo Cart para o formato esperado pelo frontend
+        $response = [
+            'items' => $cart->items->toArray(),
+            'subtotal' => $cart->subtotal,
+            'discount' => $cart->discount,
+            'shipping' => $cart->shipping,
+            'total' => $cart->total,
+            'coupon_code' => $cart->coupon_code,
+            'coupon_id' => $cart->coupon_id
+        ];
+        
         return response()->json([
             'success' => true,
-            'data' => $this->getCart()
+            'data' => $response
         ]);
     }
 
@@ -104,16 +120,19 @@ class CartController extends Controller
             ], 400);
         }
         
-        // Adiciona ao carrinho
+        // Obtém o carrinho
         $cart = $this->getCart();
         $price = $variation ? $product->price + $variation->price_adjustment : $product->price;
         
         // Verifica se já existe o mesmo item no carrinho
-        $itemIndex = $this->findCartItemIndex($cart, $productId, $variationId);
+        $cartItem = $cart->items()
+            ->where('product_id', $productId)
+            ->where('product_variation_id', $variationId)
+            ->first();
         
-        if ($itemIndex !== false) {
+        if ($cartItem) {
             // Se existir, soma a quantidade
-            $newQuantity = $cart['items'][$itemIndex]['quantity'] + $quantity;
+            $newQuantity = $cartItem->quantity + $quantity;
             
             // Verificação adicional de estoque
             if ($stock->quantity < $newQuantity) {
@@ -123,30 +142,26 @@ class CartController extends Controller
                 ], 400);
             }
             
-            $cart['items'][$itemIndex]['quantity'] = $newQuantity;
+            $cartItem->quantity = $newQuantity;
+            $cartItem->save();
         } else {
             // Se não existir, adiciona novo item
-            $cart['items'][] = [
+            $cartItem = new CartItem([
                 'product_id' => $productId,
                 'product_variation_id' => $variationId,
                 'quantity' => $quantity,
                 'price' => $price,
                 'name' => $product->name,
                 'variation_name' => $variation ? $variation->name : null
-            ];
+            ]);
+            $cart->items()->save($cartItem);
         }
         
         // Recalcula os totais
-        $this->recalculateCart($cart);
+        $cart->recalculate()->save();
         
-        // Salva o carrinho na sessão
-        $this->saveCart($cart);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Produto adicionado ao carrinho!',
-            'data' => $cart
-        ]);
+        // Retorna o carrinho atualizado
+        return $this->index();
     }
 
     /**
@@ -170,25 +185,54 @@ class CartController extends Controller
         $itemIndex = $request->item_index;
         $quantity = $request->quantity;
         
+        // Obtém o carrinho
         $cart = $this->getCart();
         
-        // Verifica se o item existe no carrinho
-        if (!isset($cart['items'][$itemIndex])) {
+        // Log de debug para o carrinho
+        Log::info('Update - Cart before: ', [
+            'cart_id' => $request->query('cart_id', 'n/a'),
+            'item_index' => $itemIndex,
+            'items_count' => $cart->items->count()
+        ]);
+        
+        // Verifica se o carrinho tem itens
+        if ($cart->items->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Item não encontrado no carrinho.'
+                'message' => 'Carrinho vazio. Não há itens para atualizar.',
+                'debug_info' => [
+                    'cart_id' => $request->query('cart_id', 'n/a'),
+                    'cart_token' => $request->cookie('cart_token', 'n/a'),
+                    'session_id' => Session::getId()
+                ]
+            ], 400);
+        }
+        
+        // Tenta encontrar o item pelo índice
+        $cartItems = $cart->items->values();
+        
+        if (!isset($cartItems[$itemIndex])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item não encontrado no carrinho. Tente recarregar a página.',
+                'debug_info' => [
+                    'cart_id' => $request->query('cart_id', 'n/a'),
+                    'item_index' => $itemIndex,
+                    'available_indexes' => range(0, $cartItems->count() - 1),
+                    'items_count' => $cartItems->count()
+                ]
             ], 404);
         }
         
-        $item = $cart['items'][$itemIndex];
+        $cartItem = $cartItems[$itemIndex];
         
         // Verifica estoque
-        if ($item['product_variation_id']) {
-            $stock = Stock::where('product_id', $item['product_id'])
-                ->where('product_variation_id', $item['product_variation_id'])
+        if ($cartItem->product_variation_id) {
+            $stock = Stock::where('product_id', $cartItem->product_id)
+                ->where('product_variation_id', $cartItem->product_variation_id)
                 ->first();
         } else {
-            $stock = Stock::where('product_id', $item['product_id'])
+            $stock = Stock::where('product_id', $cartItem->product_id)
                 ->whereNull('product_variation_id')
                 ->first();
         }
@@ -201,19 +245,14 @@ class CartController extends Controller
         }
         
         // Atualiza a quantidade
-        $cart['items'][$itemIndex]['quantity'] = $quantity;
+        $cartItem->quantity = $quantity;
+        $cartItem->save();
         
         // Recalcula os totais
-        $this->recalculateCart($cart);
+        $cart->recalculate()->save();
         
-        // Salva o carrinho na sessão
-        $this->saveCart($cart);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Carrinho atualizado!',
-            'data' => $cart
-        ]);
+        // Retorna o carrinho atualizado
+        return $this->index();
     }
 
     /**
@@ -236,28 +275,34 @@ class CartController extends Controller
         $itemIndex = $request->item_index;
         $cart = $this->getCart();
         
-        // Verifica se o item existe no carrinho
-        if (!isset($cart['items'][$itemIndex])) {
+        // Verifica se o carrinho tem itens
+        if ($cart->items->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Item não encontrado no carrinho.'
+                'message' => 'Carrinho vazio. Não há itens para remover.'
             ], 404);
         }
         
+        // Tenta encontrar o item pelo índice
+        $cartItems = $cart->items->values();
+        
+        if (!isset($cartItems[$itemIndex])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Item não encontrado no carrinho. Tente recarregar a página.'
+            ], 404);
+        }
+        
+        $cartItem = $cartItems[$itemIndex];
+        
         // Remove o item
-        array_splice($cart['items'], $itemIndex, 1);
+        $cartItem->delete();
         
         // Recalcula os totais
-        $this->recalculateCart($cart);
+        $cart->recalculate()->save();
         
-        // Salva o carrinho na sessão
-        $this->saveCart($cart);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Item removido do carrinho!',
-            'data' => $cart
-        ]);
+        // Retorna o carrinho atualizado
+        return $this->index();
     }
 
     /**
@@ -265,13 +310,22 @@ class CartController extends Controller
      */
     public function clear()
     {
-        $this->saveCart($this->emptyCart());
+        $cart = $this->getCart();
         
-        return response()->json([
-            'success' => true,
-            'message' => 'Carrinho limpo!',
-            'data' => $this->emptyCart()
-        ]);
+        // Remove todos os itens
+        $cart->items()->delete();
+        
+        // Reseta os valores
+        $cart->subtotal = 0;
+        $cart->discount = 0;
+        $cart->shipping = 0;
+        $cart->total = 0;
+        $cart->coupon_code = null;
+        $cart->coupon_id = null;
+        $cart->save();
+        
+        // Retorna o carrinho vazio
+        return $this->index();
     }
 
     /**
@@ -307,10 +361,10 @@ class CartController extends Controller
         }
         
         // Verifica se o cupom é válido para o valor do carrinho
-        if (!$coupon->isValid($cart['subtotal'])) {
+        if (!$coupon->isValid($cart->subtotal)) {
             $message = 'Cupom inválido para este pedido.';
             
-            if ($coupon->min_value && $cart['subtotal'] < $coupon->min_value) {
+            if ($coupon->min_value && $cart->subtotal < $coupon->min_value) {
                 $message = 'Valor mínimo do pedido não atingido. Adicione mais produtos.';
             }
             
@@ -321,23 +375,14 @@ class CartController extends Controller
         }
         
         // Aplica o cupom
-        $cart['coupon_code'] = $couponCode;
-        $cart['coupon_id'] = $coupon->id;
+        $cart->coupon_code = $couponCode;
+        $cart->coupon_id = $coupon->id;
         
-        // Calcula o desconto
-        $cart['discount'] = $coupon->calculateDiscount($cart['subtotal']);
+        // Recalcula os totais (incluindo o desconto)
+        $cart->recalculate()->save();
         
-        // Recalcula os totais
-        $this->recalculateCart($cart);
-        
-        // Salva o carrinho na sessão
-        $this->saveCart($cart);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Cupom aplicado com sucesso!',
-            'data' => $cart
-        ]);
+        // Retorna o carrinho atualizado
+        return $this->index();
     }
 
     /**
@@ -348,112 +393,83 @@ class CartController extends Controller
         $cart = $this->getCart();
         
         // Remove o cupom
-        $cart['coupon_code'] = null;
-        $cart['coupon_id'] = null;
-        $cart['discount'] = 0;
+        $cart->coupon_code = null;
+        $cart->coupon_id = null;
         
         // Recalcula os totais
-        $this->recalculateCart($cart);
+        $cart->recalculate()->save();
         
-        // Salva o carrinho na sessão
-        $this->saveCart($cart);
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Cupom removido!',
-            'data' => $cart
-        ]);
+        // Retorna o carrinho atualizado
+        return $this->index();
     }
 
     /**
-     * Método auxiliar para buscar o carrinho da sessão
+     * Método auxiliar para buscar ou criar o carrinho
      */
     private function getCart()
     {
-        return Session::get('cart', $this->emptyCart());
-    }
-
-    /**
-     * Método auxiliar para salvar o carrinho na sessão
-     */
-    private function saveCart($cart)
-    {
-        Session::put('cart', $cart);
-    }
-
-    /**
-     * Método auxiliar para criar um carrinho vazio
-     */
-    private function emptyCart()
-    {
-        return [
-            'items' => [],
+        // Busca o cartId do parâmetro da requisição (enviado pelo frontend)
+        $cartIdParam = request()->query('cart_id');
+        
+        // Se o cartId existir, tenta buscar o carrinho do banco de dados
+        if ($cartIdParam) {
+            $cart = Cart::where('cart_id', $cartIdParam)->first();
+            
+            // Se encontrou o carrinho, retorna ele
+            if ($cart) {
+                Log::info("Cart found with ID: {$cartIdParam}", ['items_count' => $cart->items->count()]);
+                return $cart;
+            }
+        }
+        
+        // Se não encontrou o carrinho ou não tem cartId, cria um novo
+        $cartIdParam = $cartIdParam ?: $this->generateCartToken();
+        Log::info("Creating new cart with ID: {$cartIdParam}");
+        
+        $cart = Cart::create([
+            'cart_id' => $cartIdParam,
+            'user_id' => null, // Usuário anônimo
             'subtotal' => 0,
             'discount' => 0,
             'shipping' => 0,
-            'total' => 0,
-            'coupon_code' => null,
-            'coupon_id' => null
-        ];
+            'total' => 0
+        ]);
+        
+        return $cart;
     }
 
     /**
-     * Método auxiliar para encontrar um item no carrinho
+     * Gera um token único para o carrinho
      */
-    private function findCartItemIndex($cart, $productId, $variationId)
+    private function generateCartToken()
     {
-        foreach ($cart['items'] as $index => $item) {
-            if ($item['product_id'] == $productId && $item['product_variation_id'] == $variationId) {
-                return $index;
-            }
-        }
-        
-        return false;
+        return 'cart_' . uniqid(rand(), true);
     }
 
     /**
-     * Método auxiliar para recalcular os totais do carrinho
+     * Método auxiliar para testar o carrinho, para fins de debug
      */
-    private function recalculateCart(&$cart)
+    public function testCart(Request $request)
     {
-        // Calcula o subtotal
-        $subtotal = 0;
-        foreach ($cart['items'] as $item) {
-            $subtotal += $item['price'] * $item['quantity'];
-        }
-        $cart['subtotal'] = $subtotal;
+        $cartId = $request->query('cart_id', 'não informado');
         
-        // Se houver cupom, recalcula o desconto
-        if ($cart['coupon_id']) {
-            $coupon = Coupon::find($cart['coupon_id']);
-            if ($coupon && $coupon->isValid($subtotal)) {
-                $cart['discount'] = $coupon->calculateDiscount($subtotal);
-            } else {
-                // Se o cupom não for mais válido, remove-o
-                $cart['coupon_code'] = null;
-                $cart['coupon_id'] = null;
-                $cart['discount'] = 0;
-            }
-        }
-        
-        // Calcula o frete
-        $cart['shipping'] = $this->calculateShipping($subtotal);
-        
-        // Calcula o total
-        $cart['total'] = $subtotal - $cart['discount'] + $cart['shipping'];
-    }
-
-    /**
-     * Método auxiliar para calcular o frete
-     */
-    private function calculateShipping($subtotal)
-    {
-        if ($subtotal >= 200.00) {
-            return 0; // Frete grátis
-        } elseif ($subtotal >= 52.00 && $subtotal <= 166.59) {
-            return 15.00;
+        // Tenta buscar o carrinho
+        if ($cartId !== 'não informado') {
+            $cart = Cart::where('cart_id', $cartId)->first();
         } else {
-            return 20.00;
+            $cart = null;
         }
+        
+        return response()->json([
+            'success' => true,
+            'cart_id_param' => $cartId,
+            'cart_exists' => $cart ? true : false,
+            'cart_data' => $cart ? [
+                'id' => $cart->id,
+                'items_count' => $cart->items->count(),
+                'subtotal' => $cart->subtotal,
+                'total' => $cart->total
+            ] : null
+        ]);
     }
 }

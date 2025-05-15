@@ -40,7 +40,9 @@ const ProductCard = ({ product }) => {
       </CardHeader>
       <CardBody>
         <p className="card-text text-truncate">{product.description}</p>
-        <p className="card-text fw-bold">R$ {product.price.toFixed(2).replace('.', ',')}</p>
+        <p className="card-text fw-bold">
+          R$ {(typeof product.price === 'number' ? product.price.toFixed(2) : parseFloat(product.price).toFixed(2)).replace('.', ',')}
+        </p>
         
         {product.has_variations && (
           <p className="text-muted small">

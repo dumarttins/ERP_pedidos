@@ -14,7 +14,8 @@ import {
   Button,
   Spinner,
   Alert,
-  InputGroup
+  InputGroup,
+  InputGroupText
 } from 'reactstrap';
 import { Formik, Field, ErrorMessage } from 'formik';
 import * as Yup from 'yup';
@@ -247,9 +248,9 @@ const CheckoutPage = () => {
                               placeholder="00000-000"
                             />
                             {zipCodeLoading && (
-                              <InputGroup.Text>
+                              <InputGroupText>
                                 <Spinner size="sm" />
-                              </InputGroup.Text>
+                              </InputGroupText>
                             )}
                           </InputGroup>
                           <ErrorMessage name="shipping_zipcode" component="div" className="text-danger" />
@@ -353,20 +354,20 @@ const CheckoutPage = () => {
 
                     <div className="d-flex justify-content-between mb-2">
                       <span>Subtotal:</span>
-                      <span>R$ {cart.subtotal.toFixed(2).replace('.', ',')}</span>
+                      <span>R$ {(Number(cart.subtotal) || 0).toFixed(2).replace('.', ',')}</span>
                     </div>
                     
                     {cart.discount > 0 && (
                       <div className="d-flex justify-content-between mb-2 text-success">
                         <span>Desconto:</span>
-                        <span>- R$ {cart.discount.toFixed(2).replace('.', ',')}</span>
+                        <span>- R$ {(Number(cart.discount) || 0).toFixed(2).replace('.', ',')}</span>
                       </div>
                     )}
                     
                     <div className="d-flex justify-content-between mb-2">
                       <span>Frete:</span>
-                      {cart.shipping > 0 ? (
-                        <span>R$ {cart.shipping.toFixed(2).replace('.', ',')}</span>
+                      {(Number(cart.shipping) || 0) > 0 ? (
+                        <span>R$ {(Number(cart.shipping) || 0).toFixed(2).replace('.', ',')}</span>
                       ) : (
                         <span className="text-success">Grátis</span>
                       )}
@@ -376,7 +377,7 @@ const CheckoutPage = () => {
                     
                     <div className="d-flex justify-content-between mb-3 fw-bold">
                       <span>Total:</span>
-                      <span className="text-primary fs-5">R$ {cart.total.toFixed(2).replace('.', ',')}</span>
+                      <span className="text-primary fs-5">R$ {(Number(cart.total) || 0).toFixed(2).replace('.', ',')}</span>
                     </div>
                   </CardBody>
                   <CardFooter>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Badge, Row, Col, Alert,
-  FormGroup, Input, Label
+  Table, Button, Badge, Row, Col, Alert, 
+  FormGroup, Input, Label, Pagination, PaginationItem, PaginationLink,
+  Spinner
 } from 'reactstrap';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,26 +16,68 @@ const OrdersPage = () => {
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    from: 1,
+    to: 1,
+    total: 0
+  });
+
+  const fetchOrders = async (page = 1, status = filterStatus, search = searchTerm) => {
+    setLoading(true);
+    try {
+      const params = { 
+        page,
+        ...(status ? { status } : {}),
+        ...(search ? { search } : {})
+      };
+      
+      const response = await adminService.getOrders(params);
+      
+      if (response.data && response.data.success) {
+        const { data } = response.data;
+        setOrders(data.data || []);
+        setPagination({
+          currentPage: data.current_page,
+          totalPages: data.last_page,
+          from: data.from || 0,
+          to: data.to || 0,
+          total: data.total || 0
+        });
+      } else {
+        setOrders([]);
+        console.warn('A resposta da API não contém os dados esperados:', response.data);
+      }
+    } catch (err) {
+      setError('Erro ao carregar pedidos');
+      console.error('Erro ao buscar pedidos:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  const fetchOrders = async () => {
-    try {
-      const response = await adminService.getOrders();
-      if (response.data && (Array.isArray(response.data.data) || Array.isArray(response.data))) {
-        setOrders(Array.isArray(response.data.data) ? response.data.data : response.data);
-      } else {
-        setOrders([]);
-        console.warn('A resposta da API não contém um array de pedidos:', response.data);
-      }
-      setLoading(false);
-    } catch (err) {
-      setError('Erro ao carregar pedidos');
-      setLoading(false);
-      console.error(err);
-    }
+  const handlePageChange = (page) => {
+    fetchOrders(page, filterStatus, searchTerm);
+  };
+
+  const handleStatusChange = (e) => {
+    const newStatus = e.target.value;
+    setFilterStatus(newStatus);
+    fetchOrders(1, newStatus, searchTerm);
+  };
+
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    fetchOrders(1, filterStatus, searchTerm);
   };
 
   const getStatusBadge = (status) => {
@@ -54,134 +97,172 @@ const OrdersPage = () => {
         color = 'primary';
         text = 'Enviado';
         break;
-      case 'delivered':
+      case 'completed':
         color = 'success';
-        text = 'Entregue';
+        text = 'Concluído';
         break;
+      case 'cancelled':
       case 'canceled':
         color = 'danger';
         text = 'Cancelado';
         break;
+      default:
+        color = 'secondary';
+        text = status || 'Desconhecido';
     }
     
     return <Badge color={color}>{text}</Badge>;
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return '';
-    try {
-      const options = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-      return new Date(dateString).toLocaleDateString('pt-BR', options);
-    } catch (e) {
-      console.error('Erro ao formatar data:', e);
-      return '';
+    if (!dateString) return 'N/A';
+    const options = { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    };
+    return new Date(dateString).toLocaleDateString('pt-BR', options);
+  };
+
+  const renderPagination = () => {
+    if (!pagination.totalPages || pagination.totalPages <= 1) return null;
+
+    let items = [];
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, pagination.currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(pagination.totalPages, startPage + maxVisiblePages - 1);
+
+    // Ajusta o startPage se estiver perto do final
+    if (endPage - startPage + 1 < maxVisiblePages) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
     }
-  };
 
-  const handleStatusFilter = (e) => {
-    setFilterStatus(e.target.value);
-  };
+    for (let number = startPage; number <= endPage; number++) {
+      items.push(
+        <PaginationItem active={number === pagination.currentPage} key={number}>
+          <PaginationLink onClick={() => handlePageChange(number)}>
+            {number}
+          </PaginationLink>
+        </PaginationItem>
+      );
+    }
 
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
+    return (
+      <Pagination className="d-flex justify-content-center mt-4">
+        <PaginationItem disabled={pagination.currentPage === 1}>
+          <PaginationLink first onClick={() => handlePageChange(1)} />
+        </PaginationItem>
+        <PaginationItem disabled={pagination.currentPage === 1}>
+          <PaginationLink previous onClick={() => handlePageChange(pagination.currentPage - 1)} />
+        </PaginationItem>
+        
+        {items}
+        
+        <PaginationItem disabled={pagination.currentPage === pagination.totalPages}>
+          <PaginationLink next onClick={() => handlePageChange(pagination.currentPage + 1)} />
+        </PaginationItem>
+        <PaginationItem disabled={pagination.currentPage === pagination.totalPages}>
+          <PaginationLink last onClick={() => handlePageChange(pagination.totalPages)} />
+        </PaginationItem>
+      </Pagination>
+    );
   };
-
-  const filteredOrders = Array.isArray(orders) ? orders.filter(order => {
-    const matchesStatus = filterStatus === '' || order.status === filterStatus;
-    const matchesSearch = searchTerm === '' || 
-      (order.id && order.id.toString().includes(searchTerm.toLowerCase())) ||
-      (order.user && order.user.name && order.user.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (order.shipping_address && order.shipping_address.email && 
-       order.shipping_address.email.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    return matchesStatus && matchesSearch;
-  }) : [];
 
   return (
     <MainLayout>
+      <h1 className="mb-4">Gerenciar Pedidos</h1>
+      
+      <Row className="mb-4">
+        <Col md={8}>
+          <form onSubmit={handleSearchSubmit}>
+            <FormGroup>
+              <Input
+                type="text"
+                name="search"
+                id="search"
+                placeholder="Buscar por ID, nome do cliente ou email..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+              />
+            </FormGroup>
+          </form>
+        </Col>
+        <Col md={4}>
+          <FormGroup>
+            <Input
+              type="select"
+              name="status"
+              id="status"
+              value={filterStatus}
+              onChange={handleStatusChange}
+            >
+              <option value="">Todos os Status</option>
+              <option value="pending">Pendente</option>
+              <option value="processing">Processando</option>
+              <option value="shipped">Enviado</option>
+              <option value="completed">Concluído</option>
+              <option value="cancelled">Cancelado</option>
+            </Input>
+          </FormGroup>
+        </Col>
+      </Row>
+      
       {loading ? (
-        <div>
-          <h1>Gerenciar Pedidos</h1>
-          <p>Carregando...</p>
+        <div className="text-center py-5">
+          <Spinner color="primary" />
+          <p className="mt-3">Carregando pedidos...</p>
         </div>
       ) : (
         <>
-          <h1>Gerenciar Pedidos</h1>
-
           {error && <Alert color="danger">{error}</Alert>}
 
-          <Row className="mb-3">
-            <Col md={6}>
-              <FormGroup>
-                <Input
-                  type="text"
-                  placeholder="Buscar por ID, nome do cliente ou email..."
-                  value={searchTerm}
-                  onChange={handleSearch}
-                />
-              </FormGroup>
-            </Col>
-            <Col md={6}>
-              <FormGroup>
-                <Input 
-                  type="select"
-                  value={filterStatus} 
-                  onChange={handleStatusFilter}
-                >
-                  <option value="">Todos os Status</option>
-                  <option value="pending">Pendente</option>
-                  <option value="processing">Processando</option>
-                  <option value="shipped">Enviado</option>
-                  <option value="delivered">Entregue</option>
-                  <option value="canceled">Cancelado</option>
-                </Input>
-              </FormGroup>
-            </Col>
-          </Row>
-
-          {filteredOrders.length === 0 ? (
+          {orders.length === 0 ? (
             <Alert color="info">
               Nenhum pedido encontrado.
             </Alert>
           ) : (
-            <Table responsive striped hover>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Cliente</th>
-                  <th>Data</th>
-                  <th>Total</th>
-                  <th>Pago</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOrders.map((order, index) => (
-                  <tr key={order.id || index}>
-                    <td>#{(order.id || '').toString().slice(-6)}</td>
-                    <td>{order.user ? order.user.name : 'Cliente'}</td>
-                    <td>{formatDate(order.created_at)}</td>
-                    <td>R$ {Number(order.total_price || 0).toFixed(2)}</td>
-                    <td>
-                      {order.is_paid ? (
-                        <Badge color="success">Pago em {formatDate(order.paid_at)}</Badge>
-                      ) : (
-                        <Badge color="danger">Não Pago</Badge>
-                      )}
-                    </td>
-                    <td>{getStatusBadge(order.status || 'pending')}</td>
-                    <td>
-                      <Link to={`/admin/orders/${order.id}`}>
-                        <Button color="light" size="sm">
-                          Detalhes
-                        </Button>
-                      </Link>
-                    </td>
+            <>
+              <Table responsive striped hover>
+                <thead>
+                  <tr>
+                    <th>Nº do Pedido</th>
+                    <th>Cliente</th>
+                    <th>Data</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Ações</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {orders.map((order) => (
+                    <tr key={order.id}>
+                      <td>#{order.order_number || order.id}</td>
+                      <td>{order.customer_name || 'Cliente'}</td>
+                      <td>{formatDate(order.created_at)}</td>
+                      <td>R$ {(Number(order.total) || 0).toFixed(2).replace('.', ',')}</td>
+                      <td>{getStatusBadge(order.status)}</td>
+                      <td>
+                        <Link to={`/admin/orders/${order.id}`}>
+                          <Button color="primary" size="sm">
+                            Detalhes
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              
+              {renderPagination()}
+              
+              {pagination.total > 0 && (
+                <div className="text-center mt-3">
+                  <small>Mostrando {pagination.from} até {pagination.to} de {pagination.total} pedidos</small>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

@@ -25,7 +25,31 @@ export const cartService = {
   removeItem: (itemIndex) => api.post('/cart/remove', { item_index: itemIndex }),
   clearCart: () => api.get('/cart/clear'),
   applyCoupon: (couponCode) => api.post('/cart/apply-coupon', { coupon_code: couponCode }),
-  removeCoupon: () => api.get('/cart/remove-coupon')
+  removeCoupon: () => api.get('/cart/remove-coupon'),
+  testSession: () => api.get('/cart/test-session'),
+  testCart: () => api.get('/cart/test-cart'),
+  
+  // Configurar o cartId para todas as requisições
+  configureCartId: (cartId) => {
+    // Adiciona um interceptor para incluir o cartId em todas as requisições
+    const interceptor = api.interceptors.request.use(
+      config => {
+        // Adiciona o cartId como parâmetro de query
+        if (!config.params) {
+          config.params = {};
+        }
+        config.params.cart_id = cartId;
+        return config;
+      },
+      error => Promise.reject(error)
+    );
+    return interceptor;
+  },
+  
+  // Remove o interceptor quando necessário
+  removeInterceptor: (interceptor) => {
+    api.interceptors.request.eject(interceptor);
+  }
 };
 
 // Serviços para cupons (admin)
@@ -48,5 +72,7 @@ export const checkoutService = {
 export const adminService = {
   getOrders: (params) => api.get('/admin/orders', { params }),
   getOrderById: (id) => api.get(`/admin/orders/${id}`),
-  updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}/status`, { status })
+  updateOrderStatus: (id, status) => api.put(`/admin/orders/${id}/status`, { status }),
+  markOrderAsPaid: (id) => api.put(`/admin/orders/${id}/pay`),
+  markOrderAsDelivered: (id) => api.put(`/admin/orders/${id}/deliver`)
 };

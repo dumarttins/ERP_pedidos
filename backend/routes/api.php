@@ -8,6 +8,7 @@ use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\CheckoutController;
 use App\Http\Controllers\API\CouponController;
 use App\Http\Controllers\API\WebhookController;
+use Illuminate\Support\Facades\Session;
 
 /*
 |--------------------------------------------------------------------------
@@ -37,11 +38,32 @@ Route::post('/checkout/fetch-address', [CheckoutController::class, 'fetchAddress
 Route::prefix('cart')->group(function() {
     Route::get('/', [CartController::class, 'index']);
     Route::post('/add', [CartController::class, 'add']);
+    Route::put('/update', [CartController::class, 'update']);
     Route::post('/update', [CartController::class, 'update']);
     Route::post('/remove', [CartController::class, 'remove']);
     Route::get('/clear', [CartController::class, 'clear']);
     Route::post('/apply-coupon', [CartController::class, 'applyCoupon']);
     Route::get('/remove-coupon', [CartController::class, 'removeCoupon']);
+    
+    // Rota de teste para verificar a sessão
+    Route::get('/test-cart', [CartController::class, 'testCart']);
+    
+    Route::get('/test-session', function(Request $request) {
+        $cartId = $request->query('cart_id', 'não informado');
+        $cookieToken = $request->cookie('cart_token', 'não disponível');
+        $cartKey = 'cart_' . ($cartId !== 'não informado' ? $cartId : $cookieToken);
+        $cart = Session::get($cartKey, []);
+        
+        return response()->json([
+            'success' => true,
+            'cart_id_param' => $cartId,
+            'cart_token_cookie' => $cookieToken,
+            'session_id' => Session::getId(),
+            'cart_key' => $cartKey,
+            'cart_exists' => Session::has($cartKey),
+            'cart_items_count' => count($cart['items'] ?? [])
+        ]);
+    });
 });
 
 // Checkout (processo de finalização da compra)
@@ -83,4 +105,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/orders', [CheckoutController::class, 'listOrders']);
     Route::get('/admin/orders/{order}', [CheckoutController::class, 'showOrder']);
     Route::put('/admin/orders/{order}/status', [CheckoutController::class, 'updateOrderStatus']);
+    Route::put('/admin/orders/{order}/pay', [CheckoutController::class, 'markOrderAsPaid']);
+    Route::put('/admin/orders/{order}/deliver', [CheckoutController::class, 'markOrderAsDelivered']);
 });

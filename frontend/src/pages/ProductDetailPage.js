@@ -121,12 +121,15 @@ const ProductDetailPage = () => {
   const getCurrentPrice = () => {
     if (!product) return 0;
     
+    let price = 0;
     if (product.has_variations && selectedVariation) {
       const variation = getSelectedVariationObject();
-      return variation ? variation.final_price : product.price;
+      price = variation ? variation.final_price : product.price;
+    } else {
+      price = product.price;
     }
     
-    return product.price;
+    return typeof price === 'number' ? price : parseFloat(price || 0);
   };
 
   if (loading) {
@@ -213,7 +216,7 @@ const ProductDetailPage = () => {
                             value={variation.id}
                             disabled={!variation.is_available}
                           >
-                            {variation.name} - R$ {variation.final_price.toFixed(2).replace('.', ',')}
+                            {variation.name} - R$ {(typeof variation.final_price === 'number' ? variation.final_price.toFixed(2) : parseFloat(variation.final_price || 0).toFixed(2)).replace('.', ',')}
                             {!variation.is_available && ' (Indisponível)'}
                           </option>
                         ))}
@@ -266,7 +269,7 @@ const ProductDetailPage = () => {
                     {product.variations.map((variation) => (
                       <tr key={variation.id}>
                         <td>{variation.name}</td>
-                        <td>R$ {variation.final_price.toFixed(2).replace('.', ',')}</td>
+                        <td>R$ {(typeof variation.final_price === 'number' ? variation.final_price.toFixed(2) : parseFloat(variation.final_price || 0).toFixed(2)).replace('.', ',')}</td>
                         <td>
                           {variation.is_available ? (
                             <Badge color="success" pill>Disponível</Badge>

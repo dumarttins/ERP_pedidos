@@ -1,12 +1,13 @@
 import axios from 'axios';
 
-// Criar instância base do axios
+// Configuração base do axios
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api',
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
-  }
+  },
+  withCredentials: true // Permite enviar cookies nas requisições
 });
 
 // Interceptador para adicionar o token de autenticação em cada requisição

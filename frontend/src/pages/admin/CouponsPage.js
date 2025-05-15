@@ -53,7 +53,7 @@ const CouponsPage = () => {
 
   const handleToggleActive = async (id, isActive) => {
     try {
-      await couponService.update(id, { isActive: !isActive });
+      await couponService.update(id, { active: !isActive });
       setSuccessMessage(`Cupom ${isActive ? 'desativado' : 'ativado'} com sucesso!`);
       fetchCoupons();
       
@@ -124,38 +124,38 @@ const CouponsPage = () => {
                   <tr key={coupon.id}>
                     <td>{coupon.code}</td>
                     <td>
-                      {coupon.discount_type === 'percentage' 
-                        ? `${coupon.discount_value}%` 
-                        : `R$ ${Number(coupon.discount_value).toFixed(2)}`}
+                      {coupon.type === 'percentage' 
+                        ? `${coupon.value}%` 
+                        : `R$ ${Number(coupon.value).toFixed(2)}`}
                     </td>
                     <td>
-                      {coupon.discount_type === 'percentage' ? 'Percentual' : 'Valor Fixo'}
+                      {coupon.type === 'percentage' ? 'Percentual' : 'Valor Fixo'}
                     </td>
                     <td>
-                      {coupon.min_amount ? `R$ ${Number(coupon.min_amount).toFixed(2)}` : 'N/A'}
+                      {coupon.min_value ? `R$ ${Number(coupon.min_value).toFixed(2)}` : 'N/A'}
                     </td>
                     <td>
-                      {coupon.expiry_date ? formatDate(coupon.expiry_date) : 'Sem validade'}
+                      {coupon.valid_until ? formatDate(coupon.valid_until) : 'Sem validade'}
                     </td>
                     <td>
-                      <span className={`badge bg-${coupon.is_active ? 'success' : 'danger'}`}>
-                        {coupon.is_active ? 'Ativo' : 'Inativo'}
+                      <span className={`badge bg-${coupon.active ? 'success' : 'danger'}`}>
+                        {coupon.active ? 'Ativo' : 'Inativo'}
                       </span>
                     </td>
                     <td>
                       {coupon.max_uses === null ? 'Ilimitado' : 
-                        (coupon.used_count 
-                          ? `${coupon.max_uses - coupon.used_count}/${coupon.max_uses}` 
+                        (coupon.used_times 
+                          ? `${coupon.max_uses - coupon.used_times}/${coupon.max_uses}` 
                           : `${coupon.max_uses}/${coupon.max_uses}`)}
                     </td>
                     <td>
                       <Button 
-                        color={coupon.is_active ? 'warning' : 'success'} 
+                        color={coupon.active ? 'warning' : 'success'} 
                         size="sm" 
                         className="me-2"
-                        onClick={() => handleToggleActive(coupon.id, coupon.is_active)}
+                        onClick={() => handleToggleActive(coupon.id, coupon.active)}
                       >
-                        {coupon.is_active ? 'Desativar' : 'Ativar'}
+                        {coupon.active ? 'Desativar' : 'Ativar'}
                       </Button>
                       <Link to={`/admin/coupons/${coupon.id}/edit`}>
                         <Button color="light" size="sm" className="me-2">

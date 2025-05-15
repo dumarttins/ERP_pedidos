@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Stock;
 use App\Models\Coupon;
+use App\Models\Cart;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -41,10 +42,17 @@ class CheckoutController extends Controller
             ], 422);
         }
         
-        $cart = Session::get('cart');
+        // Busca o cartId do parâmetro da requisição
+        $cartIdParam = $request->query('cart_id');
+        
+        // Tenta buscar o carrinho no banco de dados
+        $cart = null;
+        if ($cartIdParam) {
+            $cart = Cart::where('cart_id', $cartIdParam)->with('items')->first();
+        }
         
         // Verifica se o carrinho está vazio
-        if (!$cart || count($cart['items']) == 0) {
+        if (!$cart || $cart->items->isEmpty()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Seu carrinho está vazio! Adicione produtos antes de finalizar a compra.'
@@ -57,10 +65,10 @@ class CheckoutController extends Controller
         try {
             // Cria o pedido
             $order = new Order();
-            $order->subtotal = $cart['subtotal'];
-            $order->discount = $cart['discount'];
-            $order->shipping = $cart['shipping'];
-            $order->total = $cart['total'];
+            $order->subtotal = $cart->subtotal;
+            $order->discount = $cart->discount;
+            $order->shipping = $cart->shipping;
+            $order->total = $cart->total;
             $order->status = 'pending';
             
             // Dados do cliente
@@ -74,9 +82,9 @@ class CheckoutController extends Controller
             $order->notes = $request->notes;
             
             // Se tiver cupom, associa ao pedido
-            if ($cart['coupon_id']) {
-                $coupon = Coupon::find($cart['coupon_id']);
-                if ($coupon && $coupon->isValid($cart['subtotal'])) {
+            if ($cart->coupon_id) {
+                $coupon = Coupon::find($cart->coupon_id);
+                if ($coupon && $coupon->isValid($cart->subtotal)) {
                     $order->coupon_id = $coupon->id;
                     // Incrementa o uso do cupom
                     $coupon->incrementUsage();
@@ -86,31 +94,31 @@ class CheckoutController extends Controller
             $order->save();
             
             // Adiciona os itens ao pedido
-            foreach ($cart['items'] as $item) {
+            foreach ($cart->items as $item) {
                 $orderItem = new OrderItem();
                 $orderItem->order_id = $order->id;
-                $orderItem->product_id = $item['product_id'];
-                $orderItem->product_variation_id = $item['product_variation_id'];
-                $orderItem->quantity = $item['quantity'];
-                $orderItem->price = $item['price'];
-                $orderItem->total = $item['price'] * $item['quantity'];
+                $orderItem->product_id = $item->product_id;
+                $orderItem->product_variation_id = $item->product_variation_id;
+                $orderItem->quantity = $item->quantity;
+                $orderItem->price = $item->price;
+                $orderItem->total = $item->price * $item->quantity;
                 $orderItem->save();
                 
                 // Reduz o estoque
-                if ($item['product_variation_id']) {
-                    $stock = Stock::where('product_id', $item['product_id'])
-                        ->where('product_variation_id', $item['product_variation_id'])
+                if ($item->product_variation_id) {
+                    $stock = Stock::where('product_id', $item->product_id)
+                        ->where('product_variation_id', $item->product_variation_id)
                         ->first();
                 } else {
-                    $stock = Stock::where('product_id', $item['product_id'])
+                    $stock = Stock::where('product_id', $item->product_id)
                         ->whereNull('product_variation_id')
                         ->first();
                 }
                 
                 if ($stock) {
                     // Se não conseguir diminuir o estoque, desfaz a transação
-                    if (!$stock->decreaseStock($item['quantity'])) {
-                        throw new \Exception('Estoque insuficiente para o produto: ' . $item['name']);
+                    if (!$stock->decreaseStock($item->quantity)) {
+                        throw new \Exception('Estoque insuficiente para o produto: ' . $item->name);
                     }
                 }
             }
@@ -125,7 +133,10 @@ class CheckoutController extends Controller
             }
             
             // Limpa o carrinho após a finalização
-            Session::forget('cart');
+            if ($cart) {
+                $cart->items()->delete();
+                $cart->delete();
+            }
             
             // Confirma a transação
             DB::commit();
@@ -311,5 +322,57 @@ class CheckoutController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Atualiza o status de pagamento de um pedido
+     */
+    public function markOrderAsPaid(Order $order)
+    {
+        if ($order->is_paid) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Este pedido já está marcado como pago.'
+            ], 400);
+        }
+
+        $order->is_paid = true;
+        $order->paid_at = now();
+        $order->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pedido marcado como pago com sucesso.',
+            'data' => $order
+        ]);
+    }
+
+    /**
+     * Atualiza o status de entrega de um pedido
+     */
+    public function markOrderAsDelivered(Order $order)
+    {
+        if ($order->is_delivered) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Este pedido já está marcado como entregue.'
+            ], 400);
+        }
+
+        $order->is_delivered = true;
+        $order->delivered_at = now();
+        
+        // Se o status não estiver como "entregue", atualiza também
+        if ($order->status !== 'delivered') {
+            $order->status = 'delivered';
+        }
+        
+        $order->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pedido marcado como entregue com sucesso.',
+            'data' => $order
+        ]);
     }
 }

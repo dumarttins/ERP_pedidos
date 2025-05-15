@@ -19,6 +19,7 @@ const CouponEditPage = () => {
     discount_type: 'percentage',
     discount_value: '',
     min_amount: '',
+    valid_from: '',
     expiry_date: '',
     max_uses: '',
     is_active: true
@@ -36,13 +37,31 @@ const CouponEditPage = () => {
           
           // Formatar a data para o formato yyyy-MM-dd aceito pelo input date
           const couponData = response.data.data || response.data;
-          if (couponData.expiry_date) {
-            const date = new Date(couponData.expiry_date);
-            const formattedDate = date.toISOString().split('T')[0];
-            couponData.expiry_date = formattedDate;
+          
+          // Mapeie os campos do backend para os campos do frontend
+          const formattedCoupon = {
+            code: couponData.code,
+            discount_type: couponData.type,
+            discount_value: couponData.value,
+            min_amount: couponData.min_value,
+            is_active: couponData.active
+          };
+          
+          // Formatar as datas
+          if (couponData.valid_until) {
+            const date = new Date(couponData.valid_until);
+            formattedCoupon.expiry_date = date.toISOString().split('T')[0];
           }
           
-          setCoupon(couponData);
+          if (couponData.valid_from) {
+            const date = new Date(couponData.valid_from);
+            formattedCoupon.valid_from = date.toISOString().split('T')[0];
+          }
+          
+          // Adicionar max_uses ao objeto formatado
+          formattedCoupon.max_uses = couponData.max_uses;
+          
+          setCoupon(formattedCoupon);
           setLoading(false);
         } catch (err) {
           setError('Erro ao carregar dados do cupom');
@@ -72,13 +91,31 @@ const CouponEditPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    // Validate dates: expiry_date must be after or equal to valid_from
+    if (coupon.valid_from && coupon.expiry_date && coupon.expiry_date < coupon.valid_from) {
+      setError('A data de validade deve ser igual ou posterior à data de início da validade.');
+      return;
+    }
+    
     try {
+      // Map frontend field names to backend expected field names
+      const couponData = {
+        code: coupon.code,
+        type: coupon.discount_type,
+        value: coupon.discount_value,
+        min_value: coupon.min_amount,
+        valid_from: coupon.valid_from || null,
+        valid_until: coupon.expiry_date || null,
+        max_uses: coupon.max_uses || null,
+        active: coupon.is_active
+      };
+      
       if (isEditMode) {
         // Atualizar cupom existente
-        await couponService.update(id, coupon);
+        await couponService.update(id, couponData);
       } else {
         // Criar novo cupom
-        await couponService.create(coupon);
+        await couponService.create(couponData);
       }
       
       navigate('/admin/coupons');
@@ -194,26 +231,48 @@ const CouponEditPage = () => {
                   />
                   <FormText>
                     Deixe em branco se o cupom não tiver data de validade.
+                    {coupon.valid_from && <span className="text-danger"> Deve ser igual ou posterior à data de início.</span>}
                   </FormText>
                 </FormGroup>
               </Col>
             </Row>
             
-            <FormGroup className="mb-3">
-              <Label for="max_uses">Número Máximo de Usos</Label>
-              <Input
-                type="number"
-                min="1"
-                id="max_uses"
-                name="max_uses"
-                value={coupon.max_uses === null ? '' : coupon.max_uses}
-                onChange={handleChange}
-                placeholder="Opcional"
-              />
-              <FormText>
-                Deixe em branco para usos ilimitados.
-              </FormText>
-            </FormGroup>
+            <Row>
+              <Col md={6}>
+                <FormGroup className="mb-3">
+                  <Label for="valid_from">Data de Início da Validade</Label>
+                  <Input
+                    type="date"
+                    id="valid_from"
+                    name="valid_from"
+                    value={coupon.valid_from}
+                    onChange={handleChange}
+                    placeholder="Opcional"
+                  />
+                  <FormText>
+                    Deixe em branco se o cupom for válido imediatamente.
+                  </FormText>
+                </FormGroup>
+              </Col>
+              
+              <Col md={6}>
+                <FormGroup className="mb-3">
+                  <Label for="max_uses">Número Máximo de Usos</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    id="max_uses"
+                    name="max_uses"
+                    value={coupon.max_uses === null ? '' : coupon.max_uses}
+                    onChange={handleChange}
+                    placeholder="Opcional"
+                  />
+                  <FormText>
+                    Deixe em branco para usos ilimitados.
+                  </FormText>
+                </FormGroup>
+              </Col>
+            </Row>
             
             <FormGroup className="mb-3">
               <div className="form-check">

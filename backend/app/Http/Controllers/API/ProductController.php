@@ -110,12 +110,12 @@ class ProductController extends Controller
                 'name' => $request->name,
                 'price' => $request->price,
                 'description' => $request->description,
-                'has_variations' => $request->has('has_variations'),
+                'has_variations' => $request->input('has_variations', false),
                 'active' => true
             ]);
 
             // Se o produto não tem variações, cria um registro de estoque simples
-            if (!$request->has('has_variations')) {
+            if (!$request->input('has_variations', false)) {
                 Stock::create([
                     'product_id' => $product->id,
                     'quantity' => $request->stock_quantity,
@@ -197,12 +197,12 @@ class ProductController extends Controller
                 'name' => $request->name,
                 'price' => $request->price,
                 'description' => $request->description,
-                'has_variations' => $request->has('has_variations'),
-                'active' => $request->has('active')
+                'has_variations' => $request->input('has_variations', false),
+                'active' => $request->input('active', true)
             ]);
 
             // Se o produto não tem variações, atualiza o estoque simples
-            if (!$request->has('has_variations')) {
+            if (!$request->input('has_variations', false)) {
                 $stock = Stock::updateOrCreate(
                     [
                         'product_id' => $product->id,

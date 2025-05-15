@@ -177,8 +177,8 @@ const OrderSuccessPage = () => {
                       )}
                     </td>
                     <td>{item.quantity}</td>
-                    <td>R$ {item.price.toFixed(2).replace('.', ',')}</td>
-                    <td>R$ {item.total.toFixed(2).replace('.', ',')}</td>
+                    <td>R$ {(Number(item.price) || 0).toFixed(2).replace('.', ',')}</td>
+                    <td>R$ {(Number(item.total) || 0).toFixed(2).replace('.', ',')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -191,20 +191,20 @@ const OrderSuccessPage = () => {
               <div className="border p-3 bg-light">
                 <div className="d-flex justify-content-between mb-2">
                   <span>Subtotal:</span>
-                  <span>R$ {order.subtotal.toFixed(2).replace('.', ',')}</span>
+                  <span>R$ {(Number(order.subtotal) || 0).toFixed(2).replace('.', ',')}</span>
                 </div>
                 
                 {order.discount > 0 && (
                   <div className="d-flex justify-content-between mb-2 text-success">
                     <span>Desconto:</span>
-                    <span>- R$ {order.discount.toFixed(2).replace('.', ',')}</span>
+                    <span>- R$ {(Number(order.discount) || 0).toFixed(2).replace('.', ',')}</span>
                   </div>
                 )}
                 
                 <div className="d-flex justify-content-between mb-2">
                   <span>Frete:</span>
-                  {order.shipping > 0 ? (
-                    <span>R$ {order.shipping.toFixed(2).replace('.', ',')}</span>
+                  {(Number(order.shipping) || 0) > 0 ? (
+                    <span>R$ {(Number(order.shipping) || 0).toFixed(2).replace('.', ',')}</span>
                   ) : (
                     <span className="text-success">Grátis</span>
                   )}
@@ -214,7 +214,7 @@ const OrderSuccessPage = () => {
                 
                 <div className="d-flex justify-content-between mb-0 fw-bold">
                   <span>Total:</span>
-                  <span className="text-primary">R$ {order.total.toFixed(2).replace('.', ',')}</span>
+                  <span className="text-primary">R$ {(Number(order.total) || 0).toFixed(2).replace('.', ',')}</span>
                 </div>
               </div>
             </Col>
